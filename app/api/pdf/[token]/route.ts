@@ -31,10 +31,10 @@ export async function GET(
         'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('PDF generation error:', error);
     return new NextResponse(
-      `PDF belgesi oluşturulurken bir hata oluştu: ${error.message}`,
+      'PDF belgesi oluşturulurken bir hata oluştu.',
       { status: 500 }
     );
   }

@@ -1,87 +1,163 @@
-# ScopeLock 🛡️
+# ScopeLock 🔒
 
-> **"Kapsam Kaymasını (Scope Creep) Durdurun, Emeğinizi Koruyun."**  
+> **"Kapsam Kaymasını (Scope Creep) Durdurun, Emeğinizi Koruyun."**
 > Ajanslar ve freelancerlar için tek tıkla şifresiz müşteri revizyon onay ve imza sistemi.
+
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E)](https://supabase.com/)
+[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000)](https://vercel.com/)
 
 ---
 
-## ⚡ Teknik Altyapı (Tech Stack)
+## 🌐 Canlı Demo
 
-En az bakım gerektiren ve en hızlı geliştirilen modern araçlar:
+> **[https://scopelock-demo.vercel.app](https://scopelock-demo.vercel.app)** *(Demo linki yakında aktif)*
+
+---
+
+## ✨ Özellikler
+
+| Özellik | Açıklama |
+|---|---|
+| 🏢 **Ajans Paneli** | Şifre korumalı giriş, proje ve onay talebi yönetimi |
+| ✍️ **Dijital İmza** | Müşteri imzası veya tek tıklık onay mühürü (mobil uyumlu) |
+| 🔗 **Şifresiz Müşteri Portalı** | Kayıt veya şifre gerektirmeyen sihirli link sistemi |
+| 📄 **PDF Sözleşme** | Zaman damgalı, kurumsal görünümlü onay belgesi üretimi |
+| 📧 **E-posta Bildirimleri** | Resend ile ajansa ve müşteriye anlık e-posta |
+| 🛡️ **RLS Güvenliği** | Supabase Row Level Security ile veri izolasyonu |
+| 🔄 **Revizyon Akışı** | Müşteri not ekleyerek revizyon talep edebilir |
+| ❤️ **Health Check** | `/api/health` endpoint'i ile uptime izleme |
+
+---
+
+## 🏗️ Teknik Altyapı (Tech Stack)
 
 - **Web Çatısı:** Next.js 15 (App Router & Server Actions)
 - **Arayüz & Stil:** Tailwind CSS + Shadcn/ui
 - **Veritabanı & Giriş (Auth):** Supabase (PostgreSQL + RLS + Storage)
-- **İmza & Onay:** `react-signature-canvas` (Mobil dokunmatik imza veya tek tık onay mührü)
-- **PDF Üretimi:** `@react-pdf/renderer` (Zaman damgalı, yasal görünümlü tek sayfalık onay belgesi)
+- **İmza & Onay:** `react-signature-canvas` (Mobil dokunmatik imza veya tek tık onay mühürü)
+- **PDF Üretimi:** `@react-pdf/renderer` (Zaman damgalı, yasal görünümlü onay belgesi)
 - **E-posta & Bildirim:** Resend
 - **Yayınlama:** Vercel
 
 ---
 
-## 🏗️ 10-12 Günlük İnşaat Planı
-
-- [x] **1. Aşama: Temel ve Veritabanı (1. - 2. Gün)**
-  - Next.js ve Supabase bağlantısı
-  - 3 ana tablo: `agencies`, `projects`, `signoffs`
-  - Sıkı RLS (Row Level Security) kuralları ve şifresiz sihirli link token mekanizması
-- [ ] **2. Aşama: Ajans Yönetim Paneli (3. - 5. Gün)**
-  - Ajans giriş ve sade kontrol paneli
-  - "Yeni Onay Talebi Oluştur" formu (Başlık, Kapsam, Ek Tutar, Dosya)
-  - Müşteri için anında sihirli link üretimi (`/view/[token]`)
-- [ ] **3. Aşama: Müşteri Onay Sayfası (6. - 8. Gün)**
-  - Müşteri için sıfır kayıt / sıfır şifre kuralı
-  - Mobil uyumlu onay ekranı
-  - Yeşil Buton: "Kapsamı Onaylıyorum" (İmza / Mühür)
-  - Kırmızı Buton: "Revizyon İste" (Not ekleme)
-- [ ] **4. Aşama: Bildirim ve PDF Üretimi (9. - 10. Gün)**
-  - Zaman damgası ve IP kaydı
-  - Tek sayfalık kurumsal onay PDF belgesi
-  - Resend ile ajansa ve müşteriye anında e-posta bildirimi
-  - Ajans panelinin yeşile dönmesi: *"İşe başlayabilirsiniz!"*
-- [ ] **5. Aşama: Canlıya Alma & İlk Deneme (11. - 12. Gün)**
-  - Vercel dağıtımı
-  - Pilot ajans ve freelancer testleri
-
----
-
 ## 🗄️ Veritabanı Mimarisi (3 Ana Tablo)
 
-1. **`agencies`**
-   - `id`, `user_id`, `name`, `email`, `created_at`, `updated_at`
-2. **`projects`**
-   - `id`, `agency_id`, `name`, `client_name`, `client_email`, `created_at`, `updated_at`
-3. **`signoffs`**
-   - `id`, `project_id`, `agency_id`, `title`, `description`, `additional_fee`, `file_url`, `status` (`'beklemede'` | `'onaylandi'` | `'revizyon_istendi'`), `token`, `signature_data`, `signed_at`, `signer_ip`, `revision_notes`, `pdf_url`, `created_at`, `updated_at`
+```
+agencies
+  └── id, user_id, name, email, created_at, updated_at
+
+projects
+  └── id, agency_id, name, client_name, client_email, created_at, updated_at
+
+signoffs
+  └── id, project_id, agency_id, title, description, additional_fee,
+      file_url, status (beklemede | onaylandi | revizyon_istendi),
+      token, signature_data, signed_at, signer_ip,
+      revision_notes, pdf_url, created_at, updated_at
+```
 
 ---
 
 ## 🚀 Kurulum
 
-1. Depoyu klonlayın veya çalışma dizinine geçin.
-2. Bağımlılıkları yükleyin:
+### Gereksinimler
+
+- Node.js 18+
+- npm veya yarn
+- Supabase hesabı
+- Resend hesabı (e-posta bildirimleri için)
+
+### Adımlar
+
+1. **Repoyu klonlayın:**
+   ```bash
+   git clone https://github.com/BurakGuldal10/ScopeLock.git
+   cd ScopeLock
+   ```
+
+2. **Bağımlılıkları yükleyin:**
    ```bash
    npm install
    ```
-3. `.env.local` dosyasını yapılandırın (`.env.example` referansıyla):
-   ```env
-   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-   NEXT_PUBLIC_APP_URL=http://localhost:3000
-   RESEND_API_KEY=re_your_api_key
+
+3. **Ortam değişkenlerini yapılandırın:**
+   ```bash
+   cp .env.example .env.local
    ```
-4. Supabase SQL Editor'da `supabase/migrations/01_init.sql` dosyasını çalıştırın.
-5. Geliştirme sunucusunu başlatın:
+   Ardından `.env.local` dosyasını kendi değerlerinizle doldurun (bkz. [Ortam Değişkenleri](#-ortam-değişkenleri)).
+
+4. **Supabase veritabanını kurun:**
+   Supabase SQL Editor'da şu dosyayı çalıştırın:
+   ```
+   supabase/migrations/01_init.sql
+   ```
+
+5. **Geliştirme sunucusunu başlatın:**
    ```bash
    npm run dev
    ```
+   Uygulama [http://localhost:3000](http://localhost:3000) adresinde çalışacaktır.
+
+---
+
+## 🔑 Ortam Değişkenleri
+
+`.env.example` dosyasındaki değişkenlerin açıklaması:
+
+| Değişken | Açıklama | Örnek |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase proje URL'si | `https://abc123.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonim (public) anahtar | `eyJhbGci...` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase servis rol anahtarı (sunucu tarafı) | `eyJhbGci...` |
+| `NEXT_PUBLIC_APP_URL` | Uygulamanızın genel URL'si | `https://scopelock-demo.vercel.app` |
+| `RESEND_API_KEY` | Resend e-posta API anahtarı | `re_abc123...` |
+
+> ⚠️ **UYARI:** `SUPABASE_SERVICE_ROLE_KEY` ve `RESEND_API_KEY` değerlerini asla public repoya ya da client-side koda dahil etmeyin!
+
+---
+
+## 📜 Kullanılabilir Scriptler
+
+```bash
+npm run dev        # Geliştirme sunucusunu başlatır (hot reload)
+npm run build      # Prodüksiyona hazır derleme yapar
+npm run start      # Prodüksiyon sunucusunu başlatır
+npm run lint       # ESLint ile kod kalitesi kontrolü
+npm run typecheck  # TypeScript tip kontrolü (tsc --noEmit)
+```
+
+---
+
+## 🛣️ Geliştirme Yol Haritası
+
+- [x] **1. Aşama:** Temel mimari — Next.js 15, Supabase şeması, RLS politikaları
+- [x] **2. Aşama:** Ajans yönetim paneli — Dashboard, onay talebi oluşturma, Server Actions
+- [x] **3. Aşama:** Müşteri onay portalı — Şifresiz magic link, dijital imza, revizyon akışı
+- [x] **4. Aşama:** PDF üretimi + Resend e-posta bildirimleri
+- [x] **5. Aşama:** Canlıya alma, README finalizasyonu & GitHub vitrin
+
+---
+
+## 🤝 Katkıda Bulunmak
+
+Projeye katkıda bulunmak ister misiniz? Harika! Lütfen [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını okuyun.
 
 ---
 
 ## 👥 Çekirdek Ekip
 
-- **Armut**: Proje Lideri & Teknik Direktör
-- **Vanlı**: Kıdemli Full-Stack Yazılımcı
-- **Ali Oda**: Siber Güvenlik Uzmanı
-- **Jony**: Test & Kalite Uzmanı
+| İsim | Rol |
+|---|---|
+| 🍑 **Armut** | Proje Lideri & Teknik Direktör |
+| 🧑‍💻 **Vanlı** | Kıdemli Full-Stack Yazılımcı |
+| 🛡️ **Ali Oda** | Siber Güvenlik Uzmanı |
+| 🧪 **Jony** | Test & Kalite Uzmanı |
+
+---
+
+## 📄 Lisans
+
+Bu proje [MIT Lisansı](LICENSE) kapsamında lisanslanmıştır.

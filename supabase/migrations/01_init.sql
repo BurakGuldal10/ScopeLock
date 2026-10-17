@@ -1,186 +1,279 @@
 -- ==============================================================================
--- SCOPELOCK DATABASE SCHEMA (1. AŞAMA: TEMEL VE VERİTABANI)
--- Migration: 01_init.sql
--- Proje Lideri: Armut
--- Kıdemli Full-Stack: Vanlı
--- Güvenlik İncelemesi: Ali Oda
--- Kalite & Test İncelemesi: Jony
+-- SCOPELOCK DATABASE SCHEMA (V2 - GÜVENLİK VE TEST ONAYLI)
+-- Geliştirici: Vanlı (Kıdemli Full-Stack)
+-- Denetleyenler: Ali Oda (Siber Güvenlik) & Jony (QA & Test)
 -- ==============================================================================
 
--- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ==============================================================================
--- 2. 3 ANA TABLO
+-- 1. TABLOLAR
 -- ==============================================================================
 
--- Tablo 1: agencies (Ajans Bilgileri)
-CREATE TABLE IF NOT EXISTS agencies (
+-- 1.1 Workspaces (Ajans / Geliştirici Çalışma Alanı)
+CREATE TABLE IF NOT EXISTS workspaces (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+-- 1.2 Clients (Müşteriler)
+CREATE TABLE IF NOT EXISTS clients (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
+    company VARCHAR(255),
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- Tablo 2: projects (Müşteri ve Proje Adı)
-CREATE TABLE IF NOT EXISTS projects (
+-- 1.3 Approval Requests (Onay ve Revizyon Talepleri)
+CREATE TABLE IF NOT EXISTS approval_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    client_name VARCHAR(255) NOT NULL,
-    client_email VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
-);
-
--- Tablo 3: signoffs (Onay Talepleri)
--- Durumlar: 'beklemede', 'onaylandi', 'revizyon_istendi'
-CREATE TABLE IF NOT EXISTS signoffs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    agency_id UUID NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
-    additional_fee NUMERIC(10, 2) DEFAULT 0.00 NOT NULL,
-    file_url TEXT,
+    scope_details JSONB DEFAULT '[]'::jsonb NOT NULL,
+    additional_fee NUMERIC(10, 2) DEFAULT 0.00 NOT NULL CHECK (additional_fee >= 0.00),
     status VARCHAR(50) DEFAULT 'beklemede' NOT NULL CHECK (status IN ('beklemede', 'onaylandi', 'revizyon_istendi')),
-    token UUID UNIQUE DEFAULT gen_random_uuid() NOT NULL,
-    signature_data TEXT,
-    signed_at TIMESTAMPTZ,
-    signer_ip VARCHAR(45),
+    access_token UUID UNIQUE DEFAULT gen_random_uuid() NOT NULL,
+    expires_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '7 days') NOT NULL,
     revision_notes TEXT,
     pdf_url TEXT,
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- ==============================================================================
--- 3. PERFORMANS İNDEKSLERİ
--- ==============================================================================
-CREATE INDEX IF NOT EXISTS idx_agencies_user_id ON agencies(user_id);
-CREATE INDEX IF NOT EXISTS idx_projects_agency_id ON projects(agency_id);
-CREATE INDEX IF NOT EXISTS idx_signoffs_project_id ON signoffs(project_id);
-CREATE INDEX IF NOT EXISTS idx_signoffs_agency_id ON signoffs(agency_id);
-CREATE INDEX IF NOT EXISTS idx_signoffs_token ON signoffs(token);
-CREATE INDEX IF NOT EXISTS idx_signoffs_status ON signoffs(status);
+-- 1.4 Client Signatures (Yasal Bağlayıcı İmza ve Adli Kanıt Kaydı - Bire-Bir İlişki)
+CREATE TABLE IF NOT EXISTS client_signatures (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id UUID UNIQUE NOT NULL REFERENCES approval_requests(id) ON DELETE CASCADE,
+    signer_name VARCHAR(255) NOT NULL,
+    signer_email VARCHAR(255) NOT NULL,
+    signature_svg_data TEXT NOT NULL,
+    ip_address VARCHAR(45) NOT NULL,
+    user_agent TEXT NOT NULL,
+    signed_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+-- 1.5 Audit Logs (Değiştirilemez ve Silinemez Güvenlik Günlüğü)
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    request_id UUID REFERENCES approval_requests(id) ON DELETE SET NULL,
+    event_type VARCHAR(100) NOT NULL,
+    details JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
 
 -- ==============================================================================
--- 4. OTOMATİK ZAMAN DAMGASI (updated_at) TETİKLEYİCİSİ
+-- 2. İNDEKSLER
 -- ==============================================================================
-CREATE OR REPLACE FUNCTION trigger_set_updated_at()
-RETURNS TRIGGER AS $$
+CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id);
+CREATE INDEX IF NOT EXISTS idx_clients_workspace ON clients(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_approval_workspace ON approval_requests(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_approval_status ON approval_requests(status);
+CREATE INDEX IF NOT EXISTS idx_audit_workspace ON audit_logs(workspace_id);
+
+-- ==============================================================================
+-- 3. ROW LEVEL SECURITY (RLS) POLİTİKALARI
+-- ==============================================================================
+ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE approval_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE client_signatures ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Workspaces: Sadece sahibi olan kullanıcı tam yetkilidir
+CREATE POLICY "workspaces_owner_all" ON workspaces FOR ALL TO authenticated
+    USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
+
+-- Clients: Sadece ait olduğu workspace'in sahibi erişebilir
+CREATE POLICY "clients_owner_all" ON clients FOR ALL TO authenticated
+    USING (workspace_id IN (SELECT id FROM workspaces WHERE owner_id = auth.uid()))
+    WITH CHECK (workspace_id IN (SELECT id FROM workspaces WHERE owner_id = auth.uid()));
+
+-- Approval Requests: Sadece ajans sahibi erişebilir. (Anonim müşteriler sadece güvenli RPC üzerinden erişir!)
+CREATE POLICY "approval_requests_owner_all" ON approval_requests FOR ALL TO authenticated
+    USING (workspace_id IN (SELECT id FROM workspaces WHERE owner_id = auth.uid()))
+    WITH CHECK (workspace_id IN (SELECT id FROM workspaces WHERE owner_id = auth.uid()));
+
+-- Signatures: Sadece ilgili talebin sahibi olan ajans okuyabilir
+CREATE POLICY "signatures_owner_select" ON client_signatures FOR SELECT TO authenticated
+    USING (request_id IN (SELECT id FROM approval_requests WHERE workspace_id IN (SELECT id FROM workspaces WHERE owner_id = auth.uid())));
+
+-- Audit Logs: Sadece ajans sahibi okuyabilir. (UPDATE ve DELETE politikası KESİNLİKLE YOKTUR - İmmutable)
+CREATE POLICY "audit_logs_owner_select" ON audit_logs FOR SELECT TO authenticated
+    USING (workspace_id IN (SELECT id FROM workspaces WHERE owner_id = auth.uid()));
+
+-- ==============================================================================
+-- 4. GÜVENLİ RPC FONKSİYONLARI (Search-path injection ve Race-condition korumalı)
+-- ==============================================================================
+
+-- Fonksiyon 1: Token ile Onay Talebini Getirme (Numaralandırma / Veri İfşası Korumalı)
+CREATE OR REPLACE FUNCTION get_approval_by_token(p_token UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_record RECORD;
 BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
+    SELECT 
+        ar.id,
+        ar.title,
+        ar.description,
+        ar.scope_details,
+        ar.additional_fee,
+        ar.status,
+        ar.expires_at,
+        ar.created_at,
+        c.name AS client_name,
+        c.email AS client_email,
+        c.company AS client_company,
+        w.name AS workspace_name
+    INTO v_record
+    FROM approval_requests ar
+    JOIN workspaces w ON ar.workspace_id = w.id
+    JOIN clients c ON ar.client_id = c.id
+    WHERE ar.access_token = p_token;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Geçersiz veya bulunamayan onay tokenı' USING ERRCODE = 'P0002';
+    END IF;
+
+    IF v_record.expires_at < now() AND v_record.status = 'beklemede' THEN
+        RAISE EXCEPTION 'Bu onay linkinin süresi dolmuştur' USING ERRCODE = 'P0003';
+    END IF;
+
+    RETURN to_jsonb(v_record);
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
-DROP TRIGGER IF EXISTS set_agencies_updated_at ON agencies;
-CREATE TRIGGER set_agencies_updated_at
-BEFORE UPDATE ON agencies
-FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+-- Fonksiyon 2: Müşteri Onay ve Dijital İmza (Row-Level Lock, Replay Attack & Boşluk Korumalı)
+CREATE OR REPLACE FUNCTION submit_client_approval(
+    p_token UUID,
+    p_signer_name VARCHAR(255),
+    p_signer_email VARCHAR(255),
+    p_signature_svg TEXT,
+    p_ip_address VARCHAR(45),
+    p_user_agent TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_request approval_requests%ROWTYPE;
+BEGIN
+    -- Boşluk ve geçersiz veri doğrulaması (Jony QA Denetimi)
+    IF TRIM(COALESCE(p_signer_name, '')) = '' OR TRIM(COALESCE(p_signer_email, '')) = '' OR TRIM(COALESCE(p_signature_svg, '')) = '' THEN
+        RAISE EXCEPTION 'İmzalayan adı, e-posta ve imza verisi boş bırakılamaz' USING ERRCODE = 'P0005';
+    END IF;
 
-DROP TRIGGER IF EXISTS set_projects_updated_at ON projects;
-CREATE TRIGGER set_projects_updated_at
-BEFORE UPDATE ON projects
-FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+    -- Satır kilitleme (FOR UPDATE ile aynı anda birden fazla eşzamanlı isteği engelle)
+    SELECT * INTO v_request
+    FROM approval_requests
+    WHERE access_token = p_token
+    FOR UPDATE;
 
-DROP TRIGGER IF EXISTS set_signoffs_updated_at ON signoffs;
-CREATE TRIGGER set_signoffs_updated_at
-BEFORE UPDATE ON signoffs
-FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Onay talebi bulunamadı' USING ERRCODE = 'P0002';
+    END IF;
 
--- ==============================================================================
--- 5. ROW LEVEL SECURITY (RLS) AKTİVASYONU
--- ==============================================================================
-ALTER TABLE agencies ENABLE ROW LEVEL SECURITY;
-ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE signoffs ENABLE ROW LEVEL SECURITY;
+    IF v_request.status != 'beklemede' THEN
+        RAISE EXCEPTION 'Bu talep zaten % durumundadır. Tekrar imzalanamaz!', v_request.status USING ERRCODE = 'P0004';
+    END IF;
 
--- ==============================================================================
--- 6. GÜVENLİK POLİTİKALARI (RLS) - Ali Oda Onaylı
--- ==============================================================================
+    IF v_request.expires_at < now() THEN
+        RAISE EXCEPTION 'Onay linkinin süresi dolmuştur!' USING ERRCODE = 'P0003';
+    END IF;
 
--- 6.1. AGENCIES POLİTİKALARI (Sadece oturum açmış ajans sahibi erişir)
-CREATE POLICY "agencies_select_own"
-    ON agencies FOR SELECT
-    TO authenticated
-    USING (user_id = auth.uid());
+    -- 1. Durumu güncelle
+    UPDATE approval_requests
+    SET status = 'onaylandi', updated_at = now()
+    WHERE id = v_request.id;
 
-CREATE POLICY "agencies_insert_own"
-    ON agencies FOR INSERT
-    TO authenticated
-    WITH CHECK (user_id = auth.uid());
+    -- 2. İmzayı güvenli tabloya ekle
+    INSERT INTO client_signatures (
+        request_id, signer_name, signer_email, signature_svg_data, ip_address, user_agent, signed_at
+    ) VALUES (
+        v_request.id, TRIM(p_signer_name), TRIM(p_signer_email), p_signature_svg, p_ip_address, p_user_agent, now()
+    );
 
-CREATE POLICY "agencies_update_own"
-    ON agencies FOR UPDATE
-    TO authenticated
-    USING (user_id = auth.uid())
-    WITH CHECK (user_id = auth.uid());
+    -- 3. Değiştirilemez denetim günlüğü (Audit Log) oluştur
+    INSERT INTO audit_logs (workspace_id, request_id, event_type, details)
+    VALUES (
+        v_request.workspace_id,
+        v_request.id,
+        'REQUEST_APPROVED',
+        jsonb_build_object(
+            'signer_name', TRIM(p_signer_name),
+            'signer_email', TRIM(p_signer_email),
+            'ip_address', p_ip_address,
+            'user_agent', p_user_agent,
+            'timestamp', now()
+        )
+    );
 
-CREATE POLICY "agencies_delete_own"
-    ON agencies FOR DELETE
-    TO authenticated
-    USING (user_id = auth.uid());
+    RETURN jsonb_build_object('success', true, 'status', 'onaylandi');
+END;
+$$;
 
--- 6.2. PROJECTS POLİTİKALARI (Sadece projeyi oluşturan ajans erişir)
-CREATE POLICY "projects_select_own"
-    ON projects FOR SELECT
-    TO authenticated
-    USING (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
+-- Fonksiyon 3: Müşteri Revizyon Talebi (Boşluk Korumalı)
+CREATE OR REPLACE FUNCTION submit_client_revision(
+    p_token UUID,
+    p_revision_notes TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_request approval_requests%ROWTYPE;
+BEGIN
+    IF TRIM(COALESCE(p_revision_notes, '')) = '' THEN
+        RAISE EXCEPTION 'Revizyon gerekçesi boş bırakılamaz' USING ERRCODE = 'P0005';
+    END IF;
 
-CREATE POLICY "projects_insert_own"
-    ON projects FOR INSERT
-    TO authenticated
-    WITH CHECK (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
+    SELECT * INTO v_request
+    FROM approval_requests
+    WHERE access_token = p_token
+    FOR UPDATE;
 
-CREATE POLICY "projects_update_own"
-    ON projects FOR UPDATE
-    TO authenticated
-    USING (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()))
-    WITH CHECK (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Onay talebi bulunamadı' USING ERRCODE = 'P0002';
+    END IF;
 
-CREATE POLICY "projects_delete_own"
-    ON projects FOR DELETE
-    TO authenticated
-    USING (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
+    IF v_request.status != 'beklemede' THEN
+        RAISE EXCEPTION 'Bu talep üzerinde işlem yapılamaz' USING ERRCODE = 'P0004';
+    END IF;
 
--- 6.3. SIGNOFFS POLİTİKALARI (Ajans Yönetimi + Şifresiz Müşteri Token Erişimi)
--- Ajans tüm kendi signoff taleplerini yönetebilir:
-CREATE POLICY "signoffs_agency_select_own"
-    ON signoffs FOR SELECT
-    TO authenticated
-    USING (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
+    UPDATE approval_requests
+    SET status = 'revizyon_istendi', revision_notes = TRIM(p_revision_notes), updated_at = now()
+    WHERE id = v_request.id;
 
-CREATE POLICY "signoffs_agency_insert_own"
-    ON signoffs FOR INSERT
-    TO authenticated
-    WITH CHECK (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
+    INSERT INTO audit_logs (workspace_id, request_id, event_type, details)
+    VALUES (
+        v_request.workspace_id,
+        v_request.id,
+        'REVISION_REQUESTED',
+        jsonb_build_object('notes', TRIM(p_revision_notes), 'timestamp', now())
+    );
 
-CREATE POLICY "signoffs_agency_update_own"
-    ON signoffs FOR UPDATE
-    TO authenticated
-    USING (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()))
-    WITH CHECK (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
+    RETURN jsonb_build_object('success', true, 'status', 'revizyon_istendi');
+END;
+$$;
 
-CREATE POLICY "signoffs_agency_delete_own"
-    ON signoffs FOR DELETE
-    TO authenticated
-    USING (agency_id IN (SELECT id FROM agencies WHERE user_id = auth.uid()));
-
--- Müşteri Sihirli Link Erişimi (Anonim / Public):
--- Müşteri sadece linkteki benzersiz token ile talebi görebilir
-CREATE POLICY "signoffs_public_select_by_token"
-    ON signoffs FOR SELECT
-    TO anon, authenticated
-    USING (token IS NOT NULL);
-
--- Müşteri sadece beklemedeki talebi onaylayabilir veya revizyon notu düşebilir:
-CREATE POLICY "signoffs_public_update_by_token"
-    ON signoffs FOR UPDATE
-    TO anon, authenticated
-    USING (status = 'beklemede')
-    WITH CHECK (status IN ('onaylandi', 'revizyon_istendi'));
+-- Fonksiyon izinleri: Anon ve authenticated roller RPC'leri çağırabilir
+GRANT EXECUTE ON FUNCTION get_approval_by_token(UUID) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION submit_client_approval(UUID, VARCHAR, VARCHAR, TEXT, VARCHAR, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION submit_client_revision(UUID, TEXT) TO anon, authenticated;

@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { Signoff, Project, Agency } from '@/lib/types';
+import { sendApprovalNotifications } from '@/lib/email';
 
 export interface SignoffDetails extends Signoff {
   project: Project;
@@ -127,23 +128,29 @@ export async function approveSignoffAction(
       '127.0.0.1';
 
     const now = new Date().toISOString();
+    const pdfUrl = `/api/pdf/${token}`;
 
     // Try Supabase update
     try {
       const supabase = await createClient();
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('signoffs')
         .update({
           status: 'onaylandi',
           signature_data: signatureData,
           signed_at: now,
           signer_ip: clientIp,
+          pdf_url: pdfUrl,
           updated_at: now,
         })
         .eq('token', token)
-        .eq('status', 'beklemede'); // Guard: Only pending can be approved
+        .eq('status', 'beklemede')
+        .select('*, project:projects(*), agency:agencies(*)')
+        .single();
 
-      if (!error) {
+      if (!error && data) {
+        // Asynchronously send notification emails
+        sendApprovalNotifications(data as SignoffDetails).catch(console.error);
         revalidatePath(`/view/${token}`);
         revalidatePath('/dashboard');
         return { success: true };
@@ -158,6 +165,9 @@ export async function approveSignoffAction(
       MEMO_SIGNOFFS[token].signature_data = signatureData;
       MEMO_SIGNOFFS[token].signed_at = now;
       MEMO_SIGNOFFS[token].signer_ip = clientIp;
+      MEMO_SIGNOFFS[token].pdf_url = pdfUrl;
+      // Trigger notification simulation
+      sendApprovalNotifications(MEMO_SIGNOFFS[token]).catch(console.error);
     }
 
     revalidatePath(`/view/${token}`);

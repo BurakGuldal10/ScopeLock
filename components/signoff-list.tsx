@@ -12,7 +12,8 @@ import {
   FileText, 
   DollarSign, 
   User, 
-  Calendar 
+  Calendar,
+  Download 
 } from 'lucide-react';
 import { Signoff, Project } from '@/lib/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -156,6 +157,19 @@ export function SignoffList({ signoffs }: SignoffListProps) {
                   <ExternalLink className="w-3.5 h-3.5" />
                   Müşteri Ekranı
                 </Link>
+
+                {isApproved && (
+                  <a
+                    href={`/api/pdf/${item.token}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs"
+                    title="Resmi Onay Belgesini (PDF) Aç"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    PDF Belgesi
+                  </a>
+                )}
               </div>
             </div>
           </div>

@@ -10,7 +10,8 @@ import {
   Calendar, 
   FileCheck2, 
   AlertCircle,
-  FileSignature
+  FileSignature,
+  Download
 } from 'lucide-react';
 import { approveSignoffAction, requestRevisionAction, SignoffDetails } from '@/app/actions/client-signoff';
 import { SignaturePad } from '@/components/signature-pad';
@@ -76,6 +77,18 @@ export function ClientViewAction({ signoff }: ClientViewActionProps) {
                 {signedAt ? formatDate(signedAt) : 'Kayıtlı'}
               </span>
             </div>
+          </div>
+
+          <div className="pt-2">
+            <a
+              href={`/api/pdf/${signoff.token}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Resmi Onay Belgesini (PDF) İndir
+            </a>
           </div>
         </div>
       </div>

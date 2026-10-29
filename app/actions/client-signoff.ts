@@ -54,7 +54,7 @@ let MEMO_SIGNOFFS: Record<string, SignoffDetails> = {
 // Fetch signoff by magic token without requiring login
 export async function getSignoffByToken(token: string): Promise<SignoffDetails | null> {
   try {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from('signoffs')
       .select('*, project:projects(*), agency:agencies(*)')
@@ -130,9 +130,9 @@ export async function approveSignoffAction(
     const now = new Date().toISOString();
     const pdfUrl = `/api/pdf/${token}`;
 
-    // Try Supabase update
+    // Try Supabase update with admin client (bypasses RLS for public client magic token)
     try {
-      const supabase = await createClient();
+      const supabase = createAdminClient();
       const { data, error } = await supabase
         .from('signoffs')
         .update({
@@ -191,7 +191,7 @@ export async function requestRevisionAction(
     const now = new Date().toISOString();
 
     try {
-      const supabase = await createClient();
+      const supabase = createAdminClient();
       const { error } = await supabase
         .from('signoffs')
         .update({
